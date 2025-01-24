@@ -1,0 +1,102 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: 0BSD
+
+import argparse
+import json
+import pathlib
+import sys
+
+import requests
+from jwcrypto import jwk, jws
+
+LEDIR = {
+    "keyChange": "https://acme-v02.api.letsencrypt.org/acme/key-change",
+    "meta": {
+        "caaIdentities": ["letsencrypt.org"],
+        "profiles": {"classic": "The same profile you're accustomed to"},
+        "termsOfService": "https://letsencrypt.org/documents/LE-SA-v1.4-April-3-2024.pdf",
+        "website": "https://letsencrypt.org",
+    },
+    "newAccount": "https://acme-v02.api.letsencrypt.org/acme/new-acct",
+    "newNonce": "https://acme-v02.api.letsencrypt.org/acme/new-nonce",
+    "newOrder": "https://acme-v02.api.letsencrypt.org/acme/new-order",
+    "renewalInfo": "https://acme-v02.api.letsencrypt.org/draft-ietf-acme-ari-03/renewalInfo",
+    "revokeCert": "https://acme-v02.api.letsencrypt.org/acme/revoke-cert",
+}
+
+
+def getnonce():
+    return requests.post(LEDIR["newNonce"], timeout=60).headers["replay-nonce"]
+
+
+def doreq(action, key, req, acctid=None):
+    if action:
+        aurl = LEDIR[action]
+    else:
+        aurl = acctid
+    protected = {
+        "url": aurl,
+        "alg": "RS256",
+        "nonce": getnonce(),
+    }
+
+    if acctid:
+        protected["kid"] = acctid
+    else:
+        protected["jwk"] = key.export_public(as_dict=True)
+
+    xreq = jws.JWS(json.dumps(req))
+    xreq.add_signature(key, None, protected)
+    jreq = json.loads(xreq.serialize())
+    headers = {"Content-Type": "application/jose+json"}
+    x = requests.post(aurl, json=jreq, timeout=60, headers=headers)
+
+    return x.headers, x.content.decode()
+
+
+INFOREQ = {"termsOfServiceAgreed": True, "onlyReturnExisting": True}
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("tool")
+    ap.add_argument("key")
+    ap.add_argument("-d", "--domain")
+    ap.add_argument("-a", "--acctid")
+    args = ap.parse_args()
+
+    pemkey = pathlib.Path(args.key).read_bytes()
+    jkey = jwk.JWK().from_pem(pemkey)
+
+    if args.tool == "info":
+        headers, data = doreq("newAccount", jkey, INFOREQ)
+        if "Location" not in headers:
+            print("ERROR: Could not request account info")
+            print(headers)
+            print(data)
+            sys.exit(1)
+        acctid = headers["Location"]
+        print(f"Account ID: {acctid}")
+        print(data)
+    elif args.tool == "order":
+        if args.acctid:
+            acctid = args.acctid
+        else:
+            headers, _ = doreq("newAccount", jkey, INFOREQ)
+            acctid = headers["Location"]
+        dreq = {"identifiers": [{"type": "dns", "value": args.domain}]}
+        h, d = doreq("newOrder", jkey, dreq, acctid)
+        print(h)
+        print(d)
+    elif args.tool == "deleteaccount":
+        if args.acctid:
+            acctid = args.acctid
+        else:
+            headers, _ = doreq("newAccount", jkey, INFOREQ)
+            acctid = headers["Location"]
+        dreq = {"status": "deactivated"}
+        h, d = doreq(None, jkey, dreq, acctid)
+        print(h)
+        print(d)
+    else:
+        print("Tool must be one of info, order, deleteaccount")
