@@ -35,9 +35,17 @@ def doreq(action, key, req, acctid=None):
         aurl = acctid
     protected = {
         "url": aurl,
-        "alg": "RS256",
         "nonce": getnonce(),
     }
+
+    if key.get("kty") == "RSA":
+        protected["alg"] = "RS256"
+    elif key.get("kty") == "EC" and key.get("crv") == "P-256":
+        protected["alg"] = "ES256"
+    elif key.get("kty") == "EC" and key.get("crv") == "P-384":
+        protected["alg"] = "ES384"
+    else:
+        return False, False
 
     if acctid:
         protected["kid"] = acctid
@@ -79,12 +87,18 @@ if __name__ == "__main__":
 
         if tool == "info":
             headers, data = doreq("newAccount", jkey, INFOREQ)
+            if headers is False:
+                if not args.silent:
+                    print(f"Unsupported key type {jkey.get("kty")}/{jkey.get('crv')}")
+                continue
             if "Location" not in headers:
                 if not args.silent:
+                    print(keyfile)
                     print("ERROR: Could not request account info")
                     print(headers)
                     print(data)
             else:
+                print(keyfile)
                 acctid = headers["Location"]
                 print(f"Account ID: {acctid}")
                 print(data)
