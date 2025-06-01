@@ -4,7 +4,6 @@
 import argparse
 import json
 import pathlib
-import sys
 
 import requests
 from jwcrypto import jwk, jws
@@ -59,44 +58,55 @@ INFOREQ = {"termsOfServiceAgreed": True, "onlyReturnExisting": True}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("tool")
-    ap.add_argument("key")
+    ap.add_argument("keys", nargs="+")
+    ap.add_argument("-s", "--silent", action="store_true", help="Don't output failures")
+    ap.add_argument("--delete", action="store_true", help="Delete ACME account")
+    ap.add_argument("--order", action="store_true", help="Create order")
     ap.add_argument("-d", "--domain")
     ap.add_argument("-a", "--acctid")
     args = ap.parse_args()
 
-    pemkey = pathlib.Path(args.key).read_bytes()
-    jkey = jwk.JWK().from_pem(pemkey)
+    tool = "info"
+    if args.order:
+        tool = "order"
+    if args.delete:
+        tool = "delete"
 
-    if args.tool == "info":
-        headers, data = doreq("newAccount", jkey, INFOREQ)
-        if "Location" not in headers:
-            print("ERROR: Could not request account info")
-            print(headers)
-            print(data)
-            sys.exit(1)
-        acctid = headers["Location"]
-        print(f"Account ID: {acctid}")
-        print(data)
-    elif args.tool == "order":
-        if args.acctid:
-            acctid = args.acctid
+    for keyfile in args.keys:
+
+        pemkey = pathlib.Path(keyfile).read_bytes()
+        jkey = jwk.JWK().from_pem(pemkey)
+
+        if tool == "info":
+            headers, data = doreq("newAccount", jkey, INFOREQ)
+            if "Location" not in headers:
+                if not args.silent:
+                    print("ERROR: Could not request account info")
+                    print(headers)
+                    print(data)
+            else:
+                acctid = headers["Location"]
+                print(f"Account ID: {acctid}")
+                print(data)
+        elif tool == "order":
+            if args.acctid:
+                acctid = args.acctid
+            else:
+                headers, _ = doreq("newAccount", jkey, INFOREQ)
+                acctid = headers["Location"]
+            dreq = {"identifiers": [{"type": "dns", "value": args.domain}]}
+            h, d = doreq("newOrder", jkey, dreq, acctid)
+            print(h)
+            print(d)
+        elif tool == "delete":
+            if args.acctid:
+                acctid = args.acctid
+            else:
+                headers, _ = doreq("newAccount", jkey, INFOREQ)
+                acctid = headers["Location"]
+            dreq = {"status": "deactivated"}
+            h, d = doreq(None, jkey, dreq, acctid)
+            print(h)
+            print(d)
         else:
-            headers, _ = doreq("newAccount", jkey, INFOREQ)
-            acctid = headers["Location"]
-        dreq = {"identifiers": [{"type": "dns", "value": args.domain}]}
-        h, d = doreq("newOrder", jkey, dreq, acctid)
-        print(h)
-        print(d)
-    elif args.tool == "deleteaccount":
-        if args.acctid:
-            acctid = args.acctid
-        else:
-            headers, _ = doreq("newAccount", jkey, INFOREQ)
-            acctid = headers["Location"]
-        dreq = {"status": "deactivated"}
-        h, d = doreq(None, jkey, dreq, acctid)
-        print(h)
-        print(d)
-    else:
-        print("Tool must be one of info, order, deleteaccount")
+            print("Tool must be one of info, order, deleteaccount")
