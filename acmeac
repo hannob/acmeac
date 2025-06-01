@@ -89,7 +89,7 @@ if __name__ == "__main__":
             headers, data = doreq("newAccount", jkey, INFOREQ)
             if headers is False:
                 if not args.silent:
-                    print(f"Unsupported key type {jkey.get("kty")}/{jkey.get('crv')}")
+                    print(f"Unsupported key type {jkey.get('kty')}/{jkey.get('crv')}")
                 continue
             if "Location" not in headers:
                 if not args.silent:
