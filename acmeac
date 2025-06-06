@@ -6,6 +6,7 @@ import json
 import pathlib
 
 import requests
+from cryptography.exceptions import UnsupportedAlgorithm
 from jwcrypto import jwk, jws
 
 LEDIR = {
@@ -96,7 +97,7 @@ if __name__ == "__main__":
 
         try:
             jkey = jwk.JWK().from_pem(pemkey)
-        except (jwk.InvalidJWKValue, KeyError, TypeError):
+        except (jwk.InvalidJWKValue, KeyError, TypeError, UnsupportedAlgorithm):
             errmsg(f"Import error, unsupported key in {keyfile}")
             continue
         except ValueError:
