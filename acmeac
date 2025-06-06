@@ -96,7 +96,7 @@ if __name__ == "__main__":
 
         try:
             jkey = jwk.JWK().from_pem(pemkey)
-        except jwk.InvalidJWKValue:
+        except jwk.InvalidJWKValue, KeyError:
             errmsg(f"Import error, unsupported key in {keyfile}")
             continue
         except ValueError:
